@@ -6,16 +6,15 @@ Created on Sun Dec  7 19:20:42 2025
 """
 
 "Parameters"
-rse_filename = 'eos_1_preflow_supercharge' # name of the .rse file
-rse_code = 'Eos 1.0 Sim Pre-Coldflow Supercharge'
+filename = 'eos_test' # name of the .rse file
 
 # Operations
-ops_temp_celsius = 15 # deg C, initial tank temperature after filling
+ops_temp_celsius = 10 # deg C, initial tank temperature after filling
 ops_fuel_name = 'Ethanol' # for fluid property lookup
 ops_pressurant_name = 'N2' # for fluid property lookup
 ops_pressurizing_enable = 1 # boolean, enable inert gas pressurization on the pad
 ops_heating_enable = 0 # boolean, enable tank heating on the pad
-ops_pressure_target = 7e6 # Pa, firing pressure. Requires either presurization or heating enabled
+ops_pressure_target = 6e6 # Pa, firing pressure. Requires either presurization or heating enabled
 
 # Tanks
 tank_ox_diam_out = 0.11 # m, oxidizer tank outer diameter
@@ -25,33 +24,40 @@ tank_ox_ullage = 0.15 # fraction, liquid level fraction of tank
 tank_fuel_diam_out = 0.05 # m, fuel tank outer diameter
 tank_fuel_thick = 0.002 # m, fuel tank wall thickness
 tank_fuel_len = 0.9 # m, fuel tank length, inner length below piston
-tank_fuel_piston_loss = 4e5 # Pa, fuel tank piston pressure loss
+tank_fuel_piston_loss = 0.0 # Pa, fuel tank piston pressure loss
 
 # Valves
-valve_ox_cv = 0.8 # flow coefficient of oxidizer run valve (unused)
-valve_fuel_cv = 0.8 # flow coefficient of fuel run valve (unused)
+valve_ox_cv = 0.8 # flow coefficient of oxidizer run valve
+valve_fuel_cv = 0.8 # flow coefficient of fuel run valve 
 
 # Injectors
 inj_ox_number = 12 # number of individual oxidizer orifices
-inj_ox_diam_mm = 2.4 # mm, diameter of one ox orifice
+inj_ox_diam_mm = 2.45 # mm, diameter of one ox orifice
 inj_ox_cd = 0.8 # discharge coefficient oxidizer
 inj_fuel_number = 12 # number of individual fuel orifices
-inj_fuel_diam_mm = 0.92 # mm, diameter of one fuel orifice
+inj_fuel_diam_mm = 0.8 # mm, diameter of one fuel orifice
 inj_fuel_cd = 0.63 # discharge coefficient fuel
 inj_film_number = 6 # number of individual fuel orifices for film cooling
 inj_film_diam_mm = 0.5 # mm, diameter of one fuel orifice for film cooling
 inj_film_cd = 0.63 # discharge coefficient fuel for film cooling
 
 # Chamber
-chamber_diam = 0.084 # m, chamber inner diameter
-chamber_length = 0.18 # m, chamber length
-chamber_throat = 0.032 # m, nozzle throat diameter
-chamber_exit = 0.06 # m, nozzle exit diameter
-chamber_cstar_efficiency = 0.8 # factor, combustion efficiency
+chamber_diam = 0.07 # m, chamber inner diameter
+chamber_length = 0.15 # m, chamber length
+chamber_throat = 0.0305 # m, nozzle throat diameter
+chamber_exit = 0.066 # m, nozzle exit diameter
+chamber_cstar_efficiency = 0.75 # factor, combustion efficiency
 chamber_nozzle_efficiency = 0.95 # factor, expansion efficiency
 
 # Rocket
 rocket_mass_dry = 15 # kg, expected dry mass
+
+# Supercharging
+sc_tank_vol = 0.0015 # m^3, expected volume of supercharging tank
+sc_tank_pres = 30e6 # Pa, pressure of supercharging tank
+sc_fuel_name = 'Nitrogen' # supercharging gas
+sc_ox_sat_pres = 41e6 # Pa, saturation pressure of the oxidizer gas
+sc_M = 28.0134 #kg/kmol, molarmass of supercharging gas
 
 
 "Requirements"
@@ -89,13 +95,14 @@ chamber_expansion = chamber_exit_area / chamber_throat_area # nozzle expansion r
 
 # initial conditions
 gravity = 9.81 # m/s^2
-air_R = 287.07 # surrounding air gas constant 
+air_R = 287.07 # surrounding air gas constant
+univ_R = 8.134 # J/mol*K, universal gas constant
 air_pressure_zero = 101325.0  # Pa, standard pressure at MSL in Pascal
 ops_temp = 273.15 + ops_temp_celsius # K
 ops_pressurant_mass = 0.0 # kg, mass of inert press gas. Set to zero in case pressurization is disabled
 
 
-"Injectors"
+"Injectos"
 
 def injector_ox_hem(T1, P1, P2): # K tank temperature, Pa tank pressure, Pa chamber pressure
     ### Two-phase Homogeneous Equilibrium Model
@@ -123,7 +130,7 @@ def injector_ox_hem(T1, P1, P2): # K tank temperature, Pa tank pressure, Pa cham
     else:
         return 0.0, 0.0
     if P2 < P2_crit: # P2 is downstream (chamber) pressure
-       dm = flow(P2_crit)    
+       dm = flow(P2_crit)   
     else: 
         dm = flow(P2) 
     dV = dm / rho1
@@ -133,10 +140,18 @@ def injector_ox_hem(T1, P1, P2): # K tank temperature, Pa tank pressure, Pa cham
 def injector_ox_gas(T1, P1, P2): # K tank temperature, Pa tank pressure, Pa chamber pressure
     ### One-phase ideal gas model
     dm = 0 # kg/s, mass flow rate   
-    ### Tank condition
-    rho = propsi ("D", "T|gas", T1, "P", P1, "N2O")  
-    cp = propsi ("Cpmass", "T|gas", T1, "P", P1, "N2O")
-    cv = propsi ("Cvmass", "T|gas", T1, "P", P1, "N2O")
+   ### Tank condition
+    try:
+        # Standardaufruf (funktioniert bei Supercharging oder überhitztem Gas)
+        rho = propsi ("D", "T", T1, "P", P1, "N2O")  
+        cp = propsi ("Cpmass", "T", T1, "P", P1, "N2O")
+        cv = propsi ("Cvmass", "T", T1, "P", P1, "N2O")
+    except ValueError:
+        # Fallback: Wenn P und T exakt auf der Sättigungslinie liegen (ohne Supercharge)
+        # In diesem Fall betrachten wir das Gas als gesättigten Dampf (Quality Q = 1)
+        rho = propsi ("D", "T", T1, "Q", 1, "N2O")  
+        cp = propsi ("Cpmass", "T", T1, "Q", 1, "N2O")
+        cv = propsi ("Cvmass", "T", T1, "Q", 1, "N2O")
     gamma = cp/cv
     ### Adiabatic flow with choke condition
     P1_crit = P2 * ( 2 / (gamma+1) ) ** ( (gamma-1) / gamma )   
@@ -233,118 +248,194 @@ def tank_init_pressurizing(y0, P_target): # initial state, Pa firing pressure ta
         rho_press = propsi ("D", "T", T, "P", P_press, ops_pressurant_name) # kg/m^3, inert gas initial density    
         m_press = rho_press * V_press
     else:
-        m_press = 0     
+        m_press = 0        
     return m_press
 
-
+ 
+def calculate_n2_supercharging_flow(m_n2o, dm_n2o, rho_n2o_liq, rho_n2o_vap, rho_n2_gas, V_tank):
+    """
+    calculates needed N2 mass flow for constant pressure in main tank
+    """
+    # Kritische Masse (Übergang 2-Phasen zu 1-Phasen-Gebiet, V * rho_sat)
+    # Bei V = 0.00683 m^3 und rho_sat ≈ 115 kg/m^3 entspricht das m_krit ≈ 0.785 kg
+    if rho_n2o_liq <= rho_n2o_vap:
+        # Fallback für überkritischen Zustand (T > 309 K) -> direkt 1-Phasen-Gebiet
+        m_krit = 0.0 
+    else:
+        m_krit = V_tank * rho_n2o_vap
+        
+    if m_n2o >= m_krit and (rho_n2o_liq - rho_n2o_vap) > 0.01:
+        # 2-Phasen-Gebiet (Flüssiges N2O vorhanden)
+        dm_n2 = - (rho_n2_gas / (rho_n2o_liq - rho_n2o_vap)) * dm_n2o
+    else:
+        # 1-Phasen-Gebiet (Nur Gasphase)
+        M_N2 = 28.0134  # g/mol
+        M_N2O = 44.013  # g/mol
+        dm_n2 = - (M_N2 / M_N2O) * dm_n2o
+        
+    return dm_n2   
+    
+    
 
 "Main"
 
 ### Main engine run function with equilibrium tank
 def engine_tank_eq(y, ydot, P_ch, step):
-    m, mf, T = y # ox mass, fuel mass, tank temperature
+    m, mf, T, m_n2 = y # ox mass, fuel mass, tank temperature, n2 mass
     
     ### Integration
     y = y + step * ydot # explicit Euler
-    ydot = np.array([0, 0, 0])  # initialize 
+    ydot = np.array([0, 0, 0, 0])  # initialize for 4 variables
     
     ### End condition
-    if m < 0.01 or T < 100: # empty tank or too cold for coolprop
-        return y, ydot, 0.0, 0.0, 0.0, 0.0, 0.0
+    if m < 0.01 or T < 100: 
+        return y, ydot, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
     
     ### Ox tank 
-    rho = m/tank_ox_vol # ox density
-    P = propsi ("P", "T", T, "D", rho, "N2O")  # oxidizer tank pressure    
-    if T > 309: # above critical point of N2O
-        rho_liq = propsi ("D", "T", T, "P", P, "N2O")
+    rho = m/tank_ox_vol 
+    P = propsi("P", "T", T, "D", rho, "N2O")  
+    
+    if T > 309: 
+        rho_liq = propsi("D", "T", T, "P", P, "N2O")
         rho_vap = rho_liq
-        x = 1 # ratio, vapor quality: gas mass / total mass
+        x = 1 
         h_vaporization = 0
-        Z_vap = propsi ("Z", "T", T, "P", P, "N2O")
-        #Z_liq = Z_vap
-    else: # in liquid/vapor regime
-        rho_liq = propsi ("D", "T", T, "Q", 0, "N2O")
-        rho_vap = propsi ("D", "T", T, "Q", 1, "N2O")
-        x = ( rho_vap*rho_liq - rho_vap*rho ) / ( rho*(rho_liq-rho_vap) )
-        h_liq = propsi ("H", "T", T, "Q", 0, "N2O")
-        h_vap = propsi ("H", "T", T, "Q", 1, "N2O")
+        Z_vap = propsi("Z", "T", T, "P", P, "N2O")
+    else: 
+        rho_liq = propsi("D", "T", T, "Q", 0, "N2O")
+        rho_vap = propsi("D", "T", T, "Q", 1, "N2O")
+        x = (rho_vap*rho_liq - rho_vap*rho) / (rho*(rho_liq-rho_vap))
+        h_liq = propsi("H", "T", T, "Q", 0, "N2O")
+        h_vap = propsi("H", "T", T, "Q", 1, "N2O")
         h_vaporization = h_vap - h_liq
-        #Z_liq = propsi ("Z", "T", T, "Q", 0, "N2O")
-        Z_vap = propsi ("Z", "T", T, "Q", 1, "N2O")
+        Z_vap = propsi("Z", "T", T, "Q", 1, "N2O")
+        
     if x < 0: x = 0 
     if x > 1: x = 1
-    m_liq = m * (1-x) # kg, ox liquid mass
-    m_vap = m * x # kg, ox vapor mass
+    m_liq = m * (1-x) 
+    m_vap = m * x 
     
-    ### Inert gas pressurization
-    if ops_pressurizing_enable:
-        V_pressurant = m_vap / rho_vap # only in ox gaseous phase
-        rho_pressurant = ops_pressurant_mass / V_pressurant # assumes press on pad only -> constant press mass
-        P_pressurant = propsi ("P", "T", T, "D", rho_pressurant, ops_pressurant_name) # Pa, inert gas partial pressure 
-        P = P + P_pressurant # approximate total pressure
+    P_pressurant = 0.0
+    ### Inert gas pressurization (Dynamisches Supercharging)
+    if ops_pressurizing_enable and m_vap > 0:
+        V_pressurant = m_vap / rho_vap # Volumen in der Gasphase
+        # Anstatt konstanter Masse wird die dynamisch integrierte N2-Masse genutzt
+        rho_pressurant = m_n2 / V_pressurant 
+        if rho_pressurant > 0.01:
+            P_pressurant = propsi("P", "T", T, "D", rho_pressurant, ops_pressurant_name)
+            P = P + P_pressurant 
     
     ### Fuel injector
     if mf > 0.01: 
-        dmf, dVf = injector_fuel_spi(T, P, P_ch) # kg/s, fuel mass flow rate
+        dmf, dVf = injector_fuel_spi(T, P, P_ch) 
     else:
         dmf = 0.0; dVf = 0.0      
-         
-    ### Ox injector       
+          
+    ### Ox injector        
     if m > 0.01 and m_liq > 0.01:
-        dm, dV = injector_ox_hem(T, P, P_ch) # kg/s, ox mass flow rate for two-phase HEM
-        cp = propsi ("Cpmass", "T", T, "Q", 0, "N2O")
-        dT = h_vaporization/cp * (dV+dVf)*rho_vap*(Z_vap)/m # adiabatic expansion -> vaporization -> temperature drop   
+        dm, dV = injector_ox_hem(T, P, P_ch) 
+        cp = propsi("Cpmass", "T", T, "Q", 0, "N2O")
+        dT = h_vaporization/cp * (dV+dVf)*rho_vap*(Z_vap)/m   
     elif m > 0.01:
-        dm, dV = injector_ox_gas(T, P, P_ch) # kg/s, ox mass flow rate for one-phase vapor only
-        cp = propsi ("Cpmass", "T|gas", T, "P", P, "N2O")
-        dT =  ( P*(dV+dVf)*(Z_vap)/m ) / cp # adiabatic expansion -> temperature drop  
+        dm, dV = injector_ox_gas(T, P, P_ch) 
+        try:
+            # Versuch für den überhitzten Bereich (mit Supercharging)
+            cp = propsi("Cpmass", "T", T, "P", P, "N2O")
+        except ValueError:
+            # Fallback für reines Gas auf der Sättigungslinie (ohne Supercharging)
+            cp = propsi("Cpmass", "T", T, "Q", 1, "N2O")
+            
+        dT =  (P*(dV+dVf)*(Z_vap)/m) / cp
     else:
         dm = 0.0; dT = 0.0
         
+   ### Supercharging Flow Rate Berechnung
+    if ops_pressurizing_enable and m > 0.01:
+        dp = ops_pressure_target - P
+        if dp > 0:
+            try:
+                rho_n2_gas = propsi("D", "T", T, "P", ops_pressure_target, ops_pressurant_name)
+            except:
+                rho_n2_gas = 0.0
+            
+            # Theoretischer maximaler Massenstrom
+            dm_n2_max = calculate_n2_supercharging_flow(m, dm, rho_liq, rho_vap, rho_n2_gas, tank_ox_vol)
+            
+            # P-Regler: Ventil öffnet proportional zur Druckdifferenz. 
+            # Beispiel: Bei 1 bar (1e5 Pa) Abweichung oder mehr ist es zu 100% offen.
+            # Bei geringerer Abweichung drosselt es entsprechend (weicher Übergang).
+            dp_band = 1e5 # Pa, Proportionalband (kann angepasst werden)
+            valve_fraction = min(1.0, dp / dp_band)
+            
+            dm_n2 = dm_n2_max * valve_fraction
+        else:
+            dm_n2 = 0.0 
+    else:
+        dm_n2 = 0.0
+        
     ### Chamber combustion and nozzle
-    F_thrust, P_ch, c_star, isp, expansion = chamber(dm, dmf) # N, Pa, m/s, m/s
-    if abs(dm+dmf) > 0.001 :
-        isp_real = F_thrust / abs(dm+dmf)    
-    else: isp_real = 0.0
+    F_thrust, P_ch, c_star, isp, expansion = chamber(dm, dmf) 
+    if abs(dm+dmf) > 0.001:
+        isp_real = F_thrust / abs(dm+dmf)   
+    else: 
+        isp_real = 0.0
     
     ### Return
-    ydot = np.array([dm, dmf, dT]) # rates of: ox mass, fuel mass, tank temperature
+    ydot = np.array([dm, dmf, dT, dm_n2]) 
     
-    return y, ydot, P, P_ch, F_thrust, isp_real, expansion
+    return y, ydot, P, P_ch, F_thrust, isp_real, expansion, P_pressurant
 
 
 "Run simulation"
 ### Setup
 T_0 = ops_temp
 t_end = 15
-step = 0.04
+step = 0.01
 
-y0, P, x = tank_init_eq(T_0, tank_ox_vol, tank_ox_ullage)
+y0_init, P, x = tank_init_eq(T_0, tank_ox_vol, tank_ox_ullage)
 if ops_heating_enable:
-    y0 = tank_init_heating(y0, ops_pressure_target)
+    y0_init = tank_init_heating(y0_init, ops_pressure_target)
+
+# N2 Initialisierung
+m_n2_initial = 0.0
 if ops_pressurizing_enable:
-    ops_pressurant_mass = tank_init_pressurizing(y0, ops_pressure_target)
+    m_n2_initial = tank_init_pressurizing(y0_init, ops_pressure_target)
+
+# Zustandsvektor zusammenbauen (m_ox, m_fuel, T, m_n2)
+y0 = np.array([y0_init[0], y0_init[1], y0_init[2], m_n2_initial])
       
+# Initiale N2 Partialdruck-Berechnung für den Start-Vektor
+P_press_init = 0.0
+if ops_pressurizing_enable and x > 0:
+    m_vap_init = y0_init[0] * x
+    rho_vap_init = propsi("D", "T", T_0, "Q", 1, "N2O")
+    V_press_init = m_vap_init / rho_vap_init
+    if V_press_init > 0:
+        rho_press_init = m_n2_initial / V_press_init
+        if rho_press_init > 0.01:
+            P_press_init = propsi("P", "T", T_0, "D", rho_press_init, ops_pressurant_name)
+
+# Initialisierung der Supercharge-Tank Startmasse
+sc_m_n2_initial = propsi("D", "T", ops_temp, "P", sc_tank_pres, ops_pressurant_name) * sc_tank_vol
+
 sol_t = np.arange(0, t_end, step)
 sol_y = np.array([y0])
-sol_ydot = np.array([[0, 0, 0]])
+sol_ydot = np.array([[0, 0, 0, 0]]) # Start mit 4 Nullen
 sol_P = np.array([0])
 sol_Pc = np.array([air_pressure_zero])
 sol_Ft = np.array([0])
 sol_isp = np.array([0])   
 sol_exp = np.array([0])   
+sol_P_n2 = np.array([P_press_init]) # Neuer Array für N2 Partialdruck
         
 ### Main loop
 for t in range(1, len(sol_t), 1):
 
-    y, ydot, P_tank, P_ch, F_thrust, isp, expans = engine_tank_eq(sol_y[t-1], sol_ydot[t-1], sol_Pc[t-1], step)
+    y, ydot, P_tank, P_ch, F_thrust, isp, expans, P_press_n2 = engine_tank_eq(sol_y[t-1], sol_ydot[t-1], sol_Pc[t-1], step)
     
     if y[0] <= 0.01 or y[1] <= 0.01 or y[2] < 100: # empty tank or too cold for coolprop
         sol_t = sol_t[:t]
         break
-    # if y[0]+y[1] <= 0.1 or y[2] < 100: # empty tank or too cold for coolprop
-    #     sol_t = sol_t[:t]
-    #     break
     
     sol_y = np.append(sol_y, [y], axis=0)
     sol_ydot = np.append(sol_ydot, [ydot], axis=0)
@@ -353,33 +444,27 @@ for t in range(1, len(sol_t), 1):
     sol_Ft = np.append(sol_Ft, F_thrust)
     sol_isp = np.append(sol_isp, isp)
     sol_exp = np.append(sol_exp, expans)
+    sol_P_n2 = np.append(sol_P_n2, P_press_n2)
 
-### Design numbers
-des_impulse = sum(sol_Ft)/len(sol_t)*sol_t[-1]
-des_Ft_avg = sum(sol_Ft)/len(sol_t)
-des_Ft_max = max(sol_Ft)
-des_burntime = sol_t[-1]
-des_isp_avg = (sum(sol_Ft)/len(sol_t)*sol_t[-1]) / (9.81*(y0[0]+y0[1]))
-des_isp_max = max(sol_isp)/9.81
-des_twr = max(sol_Ft)/9.81/(rocket_mass_dry+sol_y[0,0]+sol_y[0,1])
-des_Pc_max = max(sol_Pc)/1e5
-des_P_max = max(sol_P)/1e5
-des_massflow_ox = (y0[0] - sol_y[len(sol_t)-1, 0]) / des_burntime
-des_massflow_fuel = (y0[1] - sol_y[len(sol_t)-1, 1]) / des_burntime
-des_of_ratio = des_massflow_ox / des_massflow_fuel
+# Berechnung der verbleibenden Supercharge Tank Masse über die Zeit
+sol_m_sc_n2 = sc_m_n2_initial - (sol_y[:, 3] - sol_y[0, 3])
 
-print("Burn time:", round(des_burntime, 2), "s")
-print("Impulse:", round(des_impulse/1000, 3), "kNs")
-print("Thrust avg:", round(des_Ft_avg), "N")
-print("Thrust max:", round(des_Ft_max), "N")
-print("Isp avg:", round(des_isp_avg, 1), "s")     
-print("Isp max:", round(des_isp_max, 1), "s") 
-print("TWR max:", round(des_twr, 2))
-print("P_chamber max:", round(des_Pc_max, 2), "bar")
-print("P_tank max:", round(des_P_max, 2), "bar")
-print("Ox mass flow avg:", round(des_massflow_ox, 4), "kg/s")
-print("Fuel mass flow avg:", round(des_massflow_fuel, 4), "kg/s")
-print("O/F ratio avg:", round(des_of_ratio, 4))
+### Solution numbers
+print("Burn time:", round(sol_t[-1], 2), "s")
+print("Isp max:", round(max(sol_isp)/9.81, 1), "s") 
+print("Isp avg:", round(sum(sol_isp)/9.81/len(sol_t), 1), "s")     
+print("Thrust max:", round(max(sol_Ft)), "N")
+print("Thrust avg:", round(sum(sol_Ft)/len(sol_t)), "N")
+print("Impulse:", round(sum(sol_Ft)/len(sol_t)*sol_t[-1]/1000, 3), "kNs")
+print("TWR max:", round(max(sol_Ft)/9.81/(rocket_mass_dry+sol_y[0,0]+sol_y[0,1]), 2))
+print("P_chamber max:", round(max(sol_Pc)/1e5, 2), "bar")
+print("P_tank max:", round(max(sol_P)/1e5, 2), "bar")
+print("P_N2 partial max:", round(max(sol_P_n2)/1e5, 2), "bar")
+print("P_N2 partial end:", round(sol_P_n2[-1]/1e5, 2), "bar")
+print("Ox mass left:", round(sol_y[len(sol_t)-1, 0], 4), "kg")
+print("Fuel mass left:", round(sol_y[len(sol_t)-1, 1], 4), "kg")
+print("SC tank N2 mass init:", round(sc_m_n2_initial, 4), "kg")
+print("SC tank N2 mass left:", round(sol_m_sc_n2[-1], 4), "kg")
 
 
 
@@ -434,6 +519,21 @@ plt.xlabel('Time $t$ [s]')
 plt.ylabel('Ratio')
 plt.grid(True)
 plt.legend()
+plt.figure(7)
+plt.plot(sol_t, sol_P_n2, label='N2 Partial Pressure')
+plt.title('N2 Partial Pressure in Oxidizer Tank')
+plt.xlabel('Time $t$ [s]')
+plt.ylabel('Pressure $P_{N2}$ [Pa]')
+plt.grid(True)
+plt.legend()
+plt.figure(8)
+plt.plot(sol_t, sol_m_sc_n2, label='Supercharge Tank')
+plt.plot(sol_t, sol_y[:,3], label='Oxidizer Tank')
+plt.title('N2 Mass Tracking')
+plt.xlabel('Time $t$ [s]')
+plt.ylabel('Mass $m$ [kg]')
+plt.grid(True)
+plt.legend()
 
 
 "Export as RSE"
@@ -447,24 +547,17 @@ def calculate_cg(mass_ox, mass_fuel):
 xml_lines = [
     '<engine-database>',
     '\t<engine-list>',
-    f'\t\t <engine mfg="Eos" Type="liquid" code="{rse_code}" auto-calc-cg="0" auto-calc-mass="0" ',
-    f'\t\t len="{tank_ox_len*1000}" dia="{tank_ox_diam*1000}" initWt="{round((y0[0] + y0[1])*1000)}" propWt="{round((y0[0] + y0[1])*1000)}" burn-time="{des_burntime}" ', 
-    f'\t\t Isp="{round(des_isp_avg)}" Itot="{round(des_impulse)}" avgThrust="{round(des_Ft_avg)}" peakThrust="{round(des_Ft_max)}" throatDia="{chamber_throat*1000}" exitDia="{chamber_exit*1000}">',
-    '\n\t\t\t<comments>',
-    f'Nitrous Oxide and {ops_fuel_name}, O/F ratio: {round(des_of_ratio, 4)}',
-    f'Temperature: {ops_temp_celsius} C, Supercharge: {ops_pressurizing_enable}, Heating: {ops_heating_enable}',
-    'Generated by Finn Breuer',
-    'Project Eos of the Hamburg Space Team',
-    '\t\t\t</comments>\n',
+    f'\t\t<engine mfg="HALO" Type="liquid" code="Static Fire Simulation" auto-calc-cg="0" auto-calc-mass="0" len="{tank_ox_len*1000}" dia="{tank_ox_diam*1000}" initWt="{(y0[0] + y0[1])*1000}" propWt="{(y0[0] + y0[1])*1000}" burn-time="{sol_t[-1]}">',
+    '\n\t\t\t<comments>\n\t\t\t Generated by Finn Breuer \n\t\t\t</comments>\n',
     '\t\t\t<data>'
 ]
 
 for t, thrust, y in zip(sol_t, sol_Ft, sol_y):
-    mass_ox, mass_fuel, temperature = y
-    mass_total = mass_ox + mass_fuel
+    mass_ox, mass_fuel, temperature, mass_n2 = y  # Unpack von 4 Variablen
+    mass_total = mass_ox + mass_fuel + mass_n2    # N2 Masse zur Raketenmasse addieren
     cg = calculate_cg(mass_ox, mass_fuel)
     xml_lines.append(f'\t\t\t\t<eng-data t="{t:.10f}" f="{thrust:.10f}" m="{(mass_total*1000):.10f}" cg="{(cg*1000):.10f}"/>')
-#xml_lines.append(f'\t\t\t\t<eng-data t="{t:.10f}" f="{thrust:.10f}" m="{total_mass:.10f}" cg="{cg:.10f}"/>')
+
 
 
 xml_lines.extend([
@@ -475,7 +568,7 @@ xml_lines.extend([
 ])
 
 # Save to .rse file
-with open(f'{rse_filename}.rse', 'w') as f:
+with open(f'{filename}.rse', 'w') as f:
     f.write('\n'.join(xml_lines))
 
 "Test"
@@ -488,6 +581,6 @@ with open(f'{rse_filename}.rse', 'w') as f:
 # #dm_arr, dV = injector_ox_hem(T1, P1, 1e5)
 # for i in range(1, len(P2_arr), 1):
 #     dm_arr[i], dV = injector_ox_hem(T1, P1, P2_arr[i])
-#     #print(P2crit)    
+#     #print(P2crit)   
 # plt.figure(1)
 # plt.plot(P2_arr, dm_arr)
