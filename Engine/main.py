@@ -10,21 +10,21 @@ rse_filename = 'eos_1_preflow_supercharge' # name of the .rse file
 rse_code = 'Eos 1.0 Sim Pre-Coldflow Supercharge'
 
 # Operations
-ops_temp_celsius = 15 # deg C, initial tank temperature after filling
+ops_temp_celsius = 10.0 # deg C, initial tank temperature after filling
 ops_fuel_name = 'Ethanol' # for fluid property lookup
 ops_pressurant_name = 'N2' # for fluid property lookup
-ops_pressurizing_enable = 1 # boolean, enable inert gas pressurization on the pad
+ops_pressurizing_enable = 0 # boolean, enable inert gas pressurization on the pad
 ops_heating_enable = 0 # boolean, enable tank heating on the pad
 ops_pressure_target = 7e6 # Pa, firing pressure. Requires either presurization or heating enabled
 
 # Tanks
 tank_ox_diam_out = 0.11 # m, oxidizer tank outer diameter
 tank_ox_thick = 0.003 # m, oxidizer tank wall thickness
-tank_ox_len = 1.0 # m, oxidizer tank length, total inner length
-tank_ox_ullage = 0.15 # fraction, liquid level fraction of tank
+tank_ox_len = 1.18 # m, oxidizer tank length, total inner length
+tank_ox_ullage = 0.18 # fraction, liquid level fraction of tank
 tank_fuel_diam_out = 0.05 # m, fuel tank outer diameter
 tank_fuel_thick = 0.002 # m, fuel tank wall thickness
-tank_fuel_len = 0.9 # m, fuel tank length, inner length below piston
+tank_fuel_len = 1.03 # m, fuel tank length, inner length below piston
 tank_fuel_piston_loss = 4e5 # Pa, fuel tank piston pressure loss
 
 # Valves
@@ -45,8 +45,8 @@ inj_film_cd = 0.63 # discharge coefficient fuel for film cooling
 # Chamber
 chamber_diam = 0.084 # m, chamber inner diameter
 chamber_length = 0.18 # m, chamber length
-chamber_throat = 0.032 # m, nozzle throat diameter
-chamber_exit = 0.06 # m, nozzle exit diameter
+chamber_throat = 0.035 # m, nozzle throat diameter
+chamber_exit = 0.065 # m, nozzle exit diameter
 chamber_cstar_efficiency = 0.8 # factor, combustion efficiency
 chamber_nozzle_efficiency = 0.95 # factor, expansion efficiency
 
@@ -55,11 +55,17 @@ rocket_mass_dry = 15 # kg, expected dry mass
 
 
 "Requirements"
+import argparse
+import json
+from pathlib import Path
+parser = argparse.ArgumentParser(description="Simulate the engine and display its results.")
+parser.add_argument("--no-gui", action="store_true", help="Run without opening the Qt results window.")
+parser.add_argument("--results-file", help=argparse.SUPPRESS)
+args = parser.parse_args()
 import math
 import numpy as np
 np.seterr(all='ignore')
 import scipy
-import matplotlib.pyplot as plt
 import CoolProp.CoolProp as CP
 from CoolProp.CoolProp import PropsSI as propsi
 import rocketcea
@@ -384,58 +390,6 @@ print("O/F ratio avg:", round(des_of_ratio, 4))
 
 
 
-"Plot"
-
-plt.figure(1)
-plt.plot(sol_t, sol_y[:,0], label='N2O')
-plt.plot(sol_t, sol_y[:,1], label='Fuel')
-plt.title('Propellant mass')
-plt.xlabel('Time $t$ [s]')
-plt.ylabel('Mass $m$ [kg]')
-plt.grid(True)
-plt.legend()
-plt.figure(2)
-plt.plot(sol_t, sol_y[:,2], label='Tank temperature')
-plt.title('Temperature')
-plt.xlabel('Time $t$ [s]')
-plt.ylabel('Temperature $T$ [K]')
-plt.grid(True)
-plt.legend()
-plt.figure(3)
-plt.plot(sol_t, -sol_ydot[:,0], label='N2O')
-plt.plot(sol_t, -sol_ydot[:,1], label='Fuel')
-plt.title('Propellant flow')
-plt.xlabel('Time $t$ [s]')
-plt.ylabel('Mass rate $\\dot m$ [kg/s]')
-plt.grid(True)
-plt.legend()
-plt.figure(4)
-plt.plot(sol_t, sol_P, label='Tank')
-plt.plot(sol_t, sol_Pc, label='Chamber')
-plt.plot(sol_t, sol_P-sol_Pc, label='$\\Delta$')
-plt.title('Pressure')
-plt.xlabel('Time $t$ [s]')
-plt.ylabel('Pressure $P$ [Pa]')
-plt.grid(True)
-plt.legend()
-plt.figure(5)
-plt.plot(sol_t, sol_Ft, label='Thrust')
-plt.plot(sol_t, sol_isp, label='$I_{sp}$')
-plt.title('Chamber')
-plt.xlabel('Time $t$ [s]')
-plt.ylabel('Force $F_t$ [N], velocity $I_{sp}$ [m/s]')
-plt.grid(True)
-plt.legend()
-plt.figure(6)
-plt.plot(sol_t, sol_exp, label='Expansion ratio')
-plt.ylim(0, 2)
-plt.title('Nozzle')
-plt.xlabel('Time $t$ [s]')
-plt.ylabel('Ratio')
-plt.grid(True)
-plt.legend()
-
-
 "Export as RSE"
 # Function to calculate CG (placeholder, replace with your actual calculation)
 def calculate_cg(mass_ox, mass_fuel):
@@ -477,6 +431,46 @@ xml_lines.extend([
 # Save to .rse file
 with open(f'{rse_filename}.rse', 'w') as f:
     f.write('\n'.join(xml_lines))
+
+summary = {
+    "Burn time": f"{des_burntime:.2f} s",
+    "Impulse": f"{des_impulse / 1000:.3f} kNs",
+    "Thrust avg": f"{des_Ft_avg:.0f} N",
+    "Thrust max": f"{des_Ft_max:.0f} N",
+    "Isp avg": f"{des_isp_avg:.1f} s",
+    "Isp max": f"{des_isp_max:.1f} s",
+    "TWR max": f"{des_twr:.2f}",
+    "P_chamber max": f"{des_Pc_max:.2f} bar",
+    "P_tank max": f"{des_P_max:.2f} bar",
+    "Ox mass flow avg": f"{des_massflow_ox:.4f} kg/s",
+    "Fuel mass flow avg": f"{des_massflow_fuel:.4f} kg/s",
+    "O/F ratio avg": f"{des_of_ratio:.4f}",
+}
+
+if args.results_file:
+    np.savez_compressed(
+        args.results_file,
+        time=sol_t, state=sol_y, rates=sol_ydot,
+        tank_pressure=sol_P, chamber_pressure=sol_Pc,
+        thrust=sol_Ft, isp=sol_isp, expansion=sol_exp,
+        summary=json.dumps(summary), rse_path=f"{rse_filename}.rse",
+    )
+
+if not args.no_gui:
+    from plot_viewer import show_results
+    show_results(
+        time=sol_t,
+        state=sol_y,
+        rates=sol_ydot,
+        tank_pressure=sol_P,
+        chamber_pressure=sol_Pc,
+        thrust=sol_Ft,
+        isp=sol_isp,
+        expansion=sol_exp,
+        summary=summary,
+        rse_path=f"{rse_filename}.rse",
+        script_path=str(Path(__file__).resolve()),
+    )
 
 "Test"
 ### Injector HEM
