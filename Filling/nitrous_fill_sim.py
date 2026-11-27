@@ -65,24 +65,24 @@ P_ATM = 1.0e5                    # [Pa]  initial air pressure in line & rocket t
 #   "NUMERICAL INSTABILITY", tighten RTOL/ATOL_* or lower DT_MAX.
 #   Runtime scales with accepted+rejected steps AND with how many valves pass two-phase
 #   N2O (the HEM flash is the cost) -- most of that cost now falls only in transients.
-T_TOTAL = 20.0                  # [s]   total simulated time (+ 10.0 s extension when STOP_ON_ROCKET_FILL enabled)
+T_TOTAL = 60.0                  # [s]   total simulated time (+ 10.0 s extension when STOP_ON_ROCKET_FILL enabled)
 
 DT_INIT = 2.0e-4                # [s]   initial trial step size
 DT_MAX  = 0.1                   # [s]   hard ceiling on the adaptive step size
-DT_MIN  = 1.0e-7                # [s]   hard floor / stuck-controller guard
+DT_MIN  = 1.0e-6                # [s]   hard floor / stuck-controller guard
 RTOL    = 1.0e-3                # [-]   relative error tolerance (shared)
-ATOL_M  = 1.0e-9                # [kg]  absolute error tolerance for mN2O, mair
-ATOL_U  = 1.0e-2                # [J]   absolute error tolerance for U
-SAFETY  = 0.9                   # [-]   step-size controller safety factor
-GROW_MAX, SHRINK_MIN = 1.5, 0.2 # [-]   per-step growth/shrink limits
+ATOL_M  = 1.0e-4                # [kg]  absolute error tolerance for mN2O, mair
+ATOL_U  = 1.0e-2               # [J]   absolute error tolerance for U
+SAFETY  = 0.5                   # [-]   step-size controller safety factor
+GROW_MAX, SHRINK_MIN = 50.0, 0.02 # [-]   per-step growth/shrink limits
 MAX_RETRIES = 20                # max step-halvings before giving up on one step
 
-PRINT_EVERY = 20      # print terminal time every N-th ACCEPTED step (set to 1 for every step)
+PRINT_EVERY = 100      # print terminal time every N-th ACCEPTED step (set to 1 for every step)
 
 # ---- Branch-flow numerical relaxation ----------------------------------------------
 # First-order damping of jumps in the quasi-steady branch-flow solutions.  This is a
 # numerical time constant, not a measured valve or pipe property; set to 0 to disable.
-FLOW_TAU = 0.010               # [s]
+FLOW_TAU = 0.10               # [s]
 
 # ---- Ambient / initial line temperature ---------------------------------------------
 T_AMBIENT = 293.15             # [K]   initial temperature of line & rocket-tank air
@@ -109,7 +109,7 @@ PIPES = [
     dict(L=1.50, D=0.010, roughness=1.5e-6),   # pipe1: smooth PTFE hose
     dict(L=0.50, D=0.010, roughness=4.0e-6),   # pipe2: GSE panel piping
     dict(L=5.00, D=0.010, roughness=1.5e-6),   # pipe3: smooth PTFE hose
-    dict(L=0.10, D=0.010, roughness=50.0e-6),  # pipe4: nominal as-printed aluminium
+    dict(L=0.20, D=0.010, roughness=50.0e-6),  # pipe4: nominal as-printed aluminium
 ]
 
 # ---- Valves 1..5 --------------------------------------------------------------------
@@ -122,7 +122,7 @@ VALVES = [
     dict(Kv=1.50, d_orifice=0.0100, Cd=0.65, t_actuat=0.1),  # valve2
     dict(Kv=2.00, d_orifice=0.0100, Cd=0.80, t_actuat=0.1),  # valve3
     dict(Kv=1.60, d_orifice=0.0100, Cd=0.80, t_actuat=0.1),  # valve4
-    dict(Kv=0.50, d_orifice=0.0020, Cd=0.60, t_actuat=0.1),  # valve5
+    dict(Kv=0.50, d_orifice=0.0010, Cd=0.60, t_actuat=0.1),  # valve5
 ]
 
 # ---- Valve schedules ----------------------------------------------------------------
@@ -145,7 +145,7 @@ VALVE_SCHEDULE = [
 #  10s more to observe the pressure decay in the rocket tank.
 #  NOTE: When T_TOTAL is reached, the simulation will stop regardless of the rocket fill level.
 
-STOP_ON_ROCKET_FILL = True    # [bool] enable/disable rocket fill stopping condition
+STOP_ON_ROCKET_FILL = False    # [bool] enable/disable rocket fill stopping condition
 if not 0.0 <= ROCKET["dip_tube_L"] <= ROCKET["H"]:
     raise ValueError("ROCKET dip_tube_L must be between zero and the tank height H")
 ROCKET_ULLAGE_TARGET = ROCKET["dip_tube_L"] / ROCKET["H"]
@@ -265,7 +265,7 @@ for b in branches:
 #  4.  STATE INVERSION:  (m_N2O, m_air, U, V)  ->  (T, P, ...)
 # =====================================================================================
 
-def brentq(f, a, b, tol=1e-6, maxit=80):
+def brentq(f, a, b, tol=1e-6, maxit=40):
     """Minimal, dependency-light Brent root finder (kept local for portability)."""
     fa, fb = f(a), f(b)
     if fa == 0: return a
