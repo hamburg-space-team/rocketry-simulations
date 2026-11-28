@@ -1,0 +1,53 @@
+# Run identification and RSE export
+rse_filename: eos1sim_coldflow_both # used in the dated output folder and .rse filename
+rse_code: Eos 1 Sim Coldflow Both Injectors
+
+# Simulation setup
+simulation_mode: cold_flow # hot_fire or cold_flow, selects N2O / CO2 as propellant
+simulation_duration_s: 15.0 # s, maximum simulated test duration
+simulation_step_s: 0.04 # s, integration and output interval
+
+# Operations
+cold_flow_injectors: both # oxidizer, fuel, or both; used only for cold_flow
+ops_temp_celsius: 0.0 # deg C, initial tank temperature after filling
+ops_fuel_name: Ethanol # for fluid property lookup
+ops_pressurant_name: N2 # for fluid property lookup
+ops_pressurizing_enable: false # enable inert gas pressurization on the pad
+ops_heating_enable: false # enable tank heating on the pad
+ops_pressure_target: 70 # bar, hot-fire tank target or regulated fuel-only cold-flow supply
+
+# Tanks
+tank_ox_diam_out: 0.11 # m, oxidizer tank outer diameter
+tank_ox_thick: 0.003 # m, oxidizer tank wall thickness
+tank_ox_len: 1.18 # m, oxidizer tank length, total inner length
+tank_ox_ullage: 0.25 # fraction of N2O or CO2 vapor height above liquid level
+tank_fuel_diam_out: 0.05 # m, fuel tank outer diameter
+tank_fuel_thick: 0.002 # m, fuel tank wall thickness
+tank_fuel_len: 1.03 # m, fuel tank length, inner length below piston
+tank_fuel_piston_loss: 4 # bar, fuel tank piston pressure loss
+
+# Valves
+valve_ox_cv: 0.8 # flow coefficient of oxidizer run valve (unused)
+valve_fuel_cv: 0.8 # flow coefficient of fuel run valve (unused)
+
+# Injectors
+inj_ox_number: 12 # number of individual oxidizer orifices
+inj_ox_diam_mm: 2.4 # mm, diameter of one ox orifice
+inj_ox_cd: 0.8 # discharge coefficient oxidizer
+inj_fuel_number: 12 # number of individual fuel orifices
+inj_fuel_diam_mm: 0.92 # mm, diameter of one fuel orifice
+inj_fuel_cd: 0.63 # discharge coefficient fuel
+inj_film_number: 6 # number of individual fuel orifices for film cooling
+inj_film_diam_mm: 0.5 # mm, diameter of one fuel orifice for film cooling
+inj_film_cd: 0.63 # discharge coefficient fuel for film cooling
+
+# Chamber
+chamber_diam: 0.084 # m, chamber inner diameter
+chamber_length: 0.18 # m, chamber length
+chamber_throat: 0.035 # m, nozzle throat diameter
+chamber_exit: 0.06 # m, nozzle exit diameter
+chamber_cstar_efficiency: 0.8 # factor, combustion efficiency
+chamber_nozzle_efficiency: 0.95 # factor, expansion efficiency
+
+# Rocket
+rocket_mass_dry: 15 # kg, expected dry mass
